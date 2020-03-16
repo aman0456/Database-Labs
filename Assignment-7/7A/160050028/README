@@ -1,0 +1,8 @@
+Submitted By:
+
+Aman Bansal : 160050028
+
+
+For showing the word count grouped by both source_name as well as the word, I concatenated the source name to every word in the article body and ran the code given in the WordCount.java to get the count and saved in the output directory.
+
+So, basically if the source name is "foo" and say one of the word in the article body is "bar" then I create a new word "foo, bar" and store in a JavaRDD<String> then I run the code given in the WordCount.java to get the count.

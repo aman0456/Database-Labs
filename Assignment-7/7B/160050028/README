@@ -1,0 +1,13 @@
+
+Submitted By:
+Aman Bansal
+160050028
+
+Just include the file Snippet.java and run on Spark with Java 8 and all the jar files.
+First of all change the string variable called allFilesPath (the first line inside the main function) and enter the path of the directory where all files are present.
+
+The directory should contain folder newsdata and all the relevant files (entities.txt, positive-words.txt, negative-words.txt).
+
+Also make sure there is no directory named "output" in that directory.
+
+After completion, there should be a directory named "output" in the main directory which will contain the required output files.

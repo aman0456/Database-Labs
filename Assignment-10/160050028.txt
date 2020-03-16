@@ -1,0 +1,384 @@
+Part2:
+For stating the plan followed in every query, I am copying the whole output returned by the explain analyse query including all the costs and query plan.
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+Ans1:
+                                                       
+-------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=254.30..254.31 rows=1 width=8) (actual time=446.562..446.562 rows=1 loops=1)
+   ->  Nested Loop Semi Join  (cost=0.29..254.08 rows=85 width=0) (actual time=149.125..446.423 rows=85 loops=1)
+         ->  Seq Scan on course c  (cost=0.00..4.00 rows=200 width=4) (actual time=0.015..0.153 rows=200 loops=1)
+         ->  Index Only Scan using takes_pkey on takes t  (cost=0.29..237.10 rows=353 width=4) (actual time=2.229..2.229 rows=0 loops=200)
+               Index Cond: (course_id = (c.course_id)::text)
+               Heap Fetches: 85
+ Planning time: 101.804 ms
+ Execution time: 447.032 ms
+(8 rows)
+
+
+The plan taken was using nested loop semi join using seq scan on course and index only scan on takes using takes_pkey.
+The actual 	execution cost is 447.032 ms.
+
+The reason is that the optimizer first converts the query to an equivalent join query and for that join, it is easier to first travel over the course and for each value of course c, use the index scan on takes (using the course_id since takes has a btree on primary key) and if any value corresponding is found it adds it to the result. This is similar to a nested loop join. The semi part is for the fact that we are finally taking attributes of only one relation and we just need to check existence on the other relation (we do not need to go to every matching tuple of the other relation). For this existence it uses index-only search on the second relation.
+
+
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+Ans2:
+
+                                                               QUERY PLAN                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=254.37..254.38 rows=1 width=8) (actual time=188.015..188.015 rows=1 loops=1)
+   ->  Nested Loop Anti Join  (cost=0.29..254.08 rows=115 width=0) (actual time=2.561..187.977 rows=115 loops=1)
+         ->  Seq Scan on course c  (cost=0.00..4.00 rows=200 width=4) (actual time=0.012..0.048 rows=200 loops=1)
+         ->  Index Only Scan using takes_pkey on takes t  (cost=0.29..237.10 rows=353 width=4) (actual time=0.939..0.939 rows=0 loops=200)
+               Index Cond: (course_id = (c.course_id)::text)
+               Heap Fetches: 85
+ Planning time: 2.496 ms
+ Execution time: 188.061 ms
+(8 rows)
+
+The plan used is nested loop anti join with seq scan on course relation and index only scan on takes relation
+The actual execution time : 188.061 ms
+
+Similar to the above except that we now need to check for non-existence and hence anti-join is used.
+
+
+
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+
+Ans3.
+lab=# explain analyse select * from student s where s.tot_cred = (select count(*) from takes t where t.id = s.id group by t.id);
+                                                              QUERY PLAN                                                              
+--------------------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on student s  (cost=0.00..106177.02 rows=10 width=24) (actual time=5.497..36.690 rows=12 loops=1)
+   Filter: (tot_cred = ((SubPlan 1))::numeric)
+   Rows Removed by Filter: 1988
+   SubPlan 1
+     ->  GroupAggregate  (cost=4.40..53.07 rows=15 width=13) (actual time=0.017..0.017 rows=1 loops=2000)
+           Group Key: t.id
+           ->  Bitmap Heap Scan on takes t  (cost=4.40..52.84 rows=15 width=5) (actual time=0.006..0.013 rows=15 loops=2000)
+                 Recheck Cond: ((id)::text = (s.id)::text)
+                 Heap Blocks: exact=28999
+                 ->  Bitmap Index Scan on takes_pkey  (cost=0.00..4.40 rows=15 width=0) (actual time=0.004..0.004 rows=15 loops=2000)
+                       Index Cond: ((id)::text = (s.id)::text)
+ Planning time: 0.649 ms
+ Execution time: 36.777 ms
+(13 rows)
+
+My query uses a subquery to find the number of courses taken by each student and then I compare it to the tot_cred of student. This causes the above plan to be followed.
+
+
+
+
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+
+
+Ans4. 
+
+lab=# explain analyse with temp(id, b) as (select id , count(*) from takes group by id)select * from student s natural join temp t where s.tot_cred = t.b;
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Hash Join  (cost=755.00..825.75 rows=10 width=32) (actual time=12.178..14.430 rows=12 loops=1)
+   Hash Cond: (((t.id)::text = (s.id)::text) AND ((t.b)::numeric = s.tot_cred))
+   CTE temp
+     ->  HashAggregate  (cost=670.00..690.00 rows=2000 width=13) (actual time=10.769..11.479 rows=2000 loops=1)
+           Group Key: takes.id
+           ->  Seq Scan on takes  (cost=0.00..520.00 rows=30000 width=5) (actual time=0.047..2.873 rows=30000 loops=1)
+   ->  CTE Scan on temp t  (cost=0.00..40.00 rows=2000 width=32) (actual time=10.773..12.181 rows=2000 loops=1)
+   ->  Hash  (cost=35.00..35.00 rows=2000 width=24) (actual time=1.302..1.302 rows=2000 loops=1)
+         Buckets: 2048  Batches: 1  Memory Usage: 133kB
+         ->  Seq Scan on student s  (cost=0.00..35.00 rows=2000 width=24) (actual time=0.012..0.362 rows=2000 loops=1)
+ Planning time: 0.444 ms
+ Execution time: 14.781 ms
+(12 rows)
+
+I rewrote the same query using with clause, by making a temporary table to store the number of courses taken by each student and then using this table to do further query.
+
+This decorrelated query runs quite fast when compared with the previous version. This was the expected result since in the previous one it has to decorrelate the queries.
+
+
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+
+
+Ans5. 
+lab=# create materialized view mymatview as (select c.course_id, count(ID) from course c, takes t where t.course_id = c.course_id group by c.course_id);
+SELECT 85
+
+I ran the above query to create a materialized view. 
+
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+
+Ans6. 
+
+
+
+Case I (with view):
+
+lab=# explain analyze select count(*) from mymatview ;
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=2.06..2.07 rows=1 width=8) (actual time=0.035..0.035 rows=1 loops=1)
+   ->  Seq Scan on mymatview  (cost=0.00..1.85 rows=85 width=0) (actual time=0.010..0.020 rows=85 loops=1)
+ Planning time: 0.130 ms
+ Execution time: 0.061 ms
+(4 rows)
+
+
+The estimated cost is 2.06
+The actual cost is 0.061
+
+
+
+#############################
+
+
+
+Case II (with query):
+
+lab=# explain analyze select count(*) from (select c.course_id, count(ID) from course c, takes t where t.course_id = c.course_id group by c.course_id) as foo;
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=983.42..983.43 rows=1 width=8) (actual time=14.704..14.704 rows=1 loops=1)
+   ->  HashAggregate  (cost=978.92..980.92 rows=200 width=12) (actual time=14.685..14.698 rows=85 loops=1)
+         Group Key: c.course_id
+         ->  Hash Join  (cost=6.50..903.92 rows=30000 width=4) (actual time=0.071..9.399 rows=30000 loops=1)
+               Hash Cond: ((t.course_id)::text = (c.course_id)::text)
+               ->  Seq Scan on takes t  (cost=0.00..520.00 rows=30000 width=4) (actual time=0.009..2.582 rows=30000 loops=1)
+               ->  Hash  (cost=4.00..4.00 rows=200 width=4) (actual time=0.057..0.057 rows=200 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 16kB
+                     ->  Seq Scan on course c  (cost=0.00..4.00 rows=200 width=4) (actual time=0.006..0.027 rows=200 loops=1)
+ Planning time: 0.200 ms
+ Execution time: 14.737 ms
+(11 rows)
+
+
+Estimated cost : 983.42
+Actual cost : 14.737
+
+The time in case II is drastically higher than in the one with materialized view.
+
+
+
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+
+
+
+Ans7.
+
+lab=# create materialized view mymatview2 as (select * from takes natural join student);
+SELECT 30000
+
+##########################################
+
+CASE I:
+lab=# explain analyse select count(*) from mymatview2 where id = '14182';
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=666.04..666.05 rows=1 width=8) (actual time=3.390..3.390 rows=1 loops=1)
+   ->  Seq Scan on mymatview2  (cost=0.00..666.00 rows=15 width=0) (actual time=0.059..3.381 rows=19 loops=1)
+         Filter: ((id)::text = '14182'::text)
+         Rows Removed by Filter: 29981
+ Planning time: 0.077 ms
+ Execution time: 3.420 ms
+(6 rows)
+
+##########################################
+
+
+
+CASE II:
+
+lab=# explain analyse select count(*) from (select * from takes natural join student) as foo where id = '14182';
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=61.32..61.33 rows=1 width=8) (actual time=0.136..0.136 rows=1 loops=1)
+   ->  Nested Loop  (cost=4.68..61.29 rows=15 width=0) (actual time=0.105..0.130 rows=19 loops=1)
+         ->  Index Only Scan using student_pkey on student  (cost=0.28..8.29 rows=1 width=5) (actual time=0.079..0.080 rows=1 loops=1)
+               Index Cond: (id = '14182'::text)
+               Heap Fetches: 1
+         ->  Bitmap Heap Scan on takes  (cost=4.40..52.84 rows=15 width=5) (actual time=0.019..0.043 rows=19 loops=1)
+               Recheck Cond: ((id)::text = '14182'::text)
+               Heap Blocks: exact=18
+               ->  Bitmap Index Scan on takes_pkey  (cost=0.00..4.40 rows=15 width=0) (actual time=0.012..0.012 rows=19 loops=1)
+                     Index Cond: ((id)::text = '14182'::text)
+ Planning time: 0.174 ms
+ Execution time: 0.185 ms
+(12 rows)
+
+
+Observation : The execution time for the materialized view is higher than the exact query case. This is because in the case of query we can use the index on the student and takes relation. But on the materialized view we cannot use indices since the view doesn't has any index on it and the only way to scan it is sequential scan.
+
+This means that the optimizer should have considered the query which created the view instead of blindly running the query on the materialized view. If the engine would have considered this then it would have noticed that using the original query would be quite fast.
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+
+Ans8.
+
+lab=# set max_parallel_workers_per_gather=4;  
+SET
+lab=# create table bigtakes as select * from takes;
+SELECT 30000
+lab=# insert into bigtakes select * from bigtakes;
+INSERT 0 30000
+lab=# insert into bigtakes select * from bigtakes;
+INSERT 0 60000
+lab=# insert into bigtakes select * from bigtakes;
+INSERT 0 120000
+lab=# insert into bigtakes select * from bigtakes;
+INSERT 0 240000
+lab=# explain analyze select count(*) from bigtakes;
+                                                                QUERY PLAN                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=7017.22..7017.23 rows=1 width=8) (actual time=48.211..48.211 rows=1 loops=1)
+   ->  Gather  (cost=7017.00..7017.21 rows=2 width=8) (actual time=48.203..48.208 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         ->  Partial Aggregate  (cost=6017.00..6017.01 rows=1 width=8) (actual time=42.940..42.940 rows=1 loops=3)
+               ->  Parallel Seq Scan on bigtakes  (cost=0.00..5517.00 rows=200000 width=0) (actual time=0.042..26.729 rows=160000 loops=3)
+ Planning time: 0.204 ms
+ Execution time: 50.036 ms
+(8 rows)
+
+
+Explanation : The optimizer runs two extra workers and uses both of them to run parallel sequential scans on the relation. Hence, overall ther are 3 parallel scans of 160000 entries each. Each scan takes around 43 ms each. Then each result is gathered and the overall time is around 48 ms. This parallelism significantly reduced the time for aggrgation.
+
+
+
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+
+
+
+Ans9.1. 
+
+In the first transaction the value of tot_credit was 59
+
+In the second transaction the value of tot_credit comes out to be 59 since in serializable isolation level both transactions have a snapshot of the original database and updates in other transactions without commit are not considered.
+
+The second transaction got the old value even after the first one has commited because in serializable isolation level even if one of the transaction has commited, the other transaction continues to see the old value because the recent commits are not considered.
+
+When we commit the second transaction also, we get the updated value because the update gets applied (in a serialized way).
+
+
+
+
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+
+
+
+
+
+Ans 9.2. 
+
+Results of the query are :
+
+id   |  salary  
+-------+----------
+ 63395 | 94333.99
+ 78699 | 59303.62
+(2 rows)
+
+
+After the second commit this is the error : 
+lab=# commit;
+ERROR:  could not serialize access due to read/write dependencies among transactions
+DETAIL:  Reason code: Canceled on identification as a pivot, during commit attempt.
+HINT:  The transaction might succeed if retried.
+
+The state of the relation is : 
+lab-# ;
+  id   |  salary  
+-------+----------
+ 63395 | 94333.99
+ 78699 | 94333.99
+(2 rows)
+
+
+The isolation level is 	serializable snapshot isolation. Both the transactions see the state of database as when the transaction was started. In this case , if both were allowed to commit then the final state would have been as if both the salaries are swapped. But we cannot get this final result by doing the two transactions in any order. So its a violation of serializable isolation and hence we get this error while commiting. 
+
+
+Redoing the part with read commited isolation level : 
+
+Both commit worked successfully : the final salaries are :
+
+lab=# select id, salary from instructor where id in('63395', '78699');
+  id   |  salary  
+-------+----------
+ 78699 | 94333.99
+ 63395 | 59303.62
+(2 rows)
+
+
+This shows that the transactions need not be serialized when the isolation level is read committed. Read-commited doesn't preserve the serial. When the second transaction commits, it doesn't uses the updated value of first commit for its update. Due to this, the salaries of both the instructor gets swapped.
+
+Note that we couldn't have got this result if we had followed any serial (first transaction followed by second and vice versa).

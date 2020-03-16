@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+
+<html>
+
+<style>
+
+table,th,td {
+
+  border : 1px solid black;
+
+  border-collapse: collapse;
+
+}
+
+th,td {
+
+  padding: 5px;
+
+}
+
+</style>
+
+<body>
+
+
+<h2>The XMLHttpRequest Object</h2>
+
+
+<form action=""> 
+
+<select name="customers" id="select" onchange="showCustomer(this.value)">
+
+<option value="">Select the customer:</option>
+
+<option value="p1">Person1</option>
+
+<option value="p2">Person2</option>
+
+<option value="p3">Person3</option>
+
+<option value="p4">Person4</option>
+
+</select>
+
+</form>
+
+<br>
+
+<div id="txtHint">Customer info will be listed here...</div>
+
+
+<script>
+
+function addmyUser(name) {
+	var ops = document.createElement("option");
+	ops.text = name;
+	document.getElementById("select").add(ops);
+	return;
+}
+
+function showCustomer(str) {
+
+  	var usid = 'p1';
+	var xhttp;    
+
+  if (str == "") {
+
+    document.getElementById("txtHint").innerHTML = "";
+
+    return;
+
+  }
+	//var usid = document.getElementById("")
+  xhttp = new XMLHttpRequest();
+
+  xhttp.onreadystatechange = function() {
+	//console.log(str);
+	if (this.readyState == 4 && this.status == 200) {
+		var obj = JSON.parse(this.responseText).data;
+		var stri = "<table id=\"this\">"
+			stri += "<tr><th> " + "post_id" + "</th>";
+		stri += "<th> " + "thread_id" + "</th>";
+		stri += "<th> " + "uid" + "</th>";
+		stri += "<th> " + "timestamp" + "</th>";
+		stri += "<th> " + "text" + "</th>";
+		stri += "</tr><br>";
+		for (var i = 0; i < obj.length; i++) {
+			stri += "<tr>"
+			stri += "<td> " + obj[i]['post_id'] + "</td>";
+			stri += "<td> " + obj[i]['thread_id'] + "</td>";
+			stri += "<td> " + obj[i]['uid'] + "</td>";
+			stri += "<td> " + obj[i]['timestamp'] + "</td>";
+			stri += "<td> " + obj[i]['text'] + "</td>";
+			stri += "</tr><br>";
+		}
+	      document.getElementById("txtHint").innerHTML = stri;
+	}
+  };
+
+  xhttp.open("GET", "ConversationDetail?other_id=" + str, true);
+
+  xhttp.send();
+ 
+}
+
+</script>
+
+</body>
+
+</html>  

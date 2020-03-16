@@ -1,0 +1,157 @@
+Aman Bansal
+16005028
+
+Ans1.
+Query: select * from student where name = 'Cal'
+Plan:
+						                       QUERY PLAN                        
+			---------------------------------------------------------
+			 Seq Scan on student  (cost=0.00..40.00 rows=1 width=24)
+			   Filter: ((name)::text = 'Cal'::text)
+			(2 rows)
+
+
+
+Explanation : the primary key of student is its id and it can do index scan when the condition in the where query is something like id = 'xyz' but for name it needs to do seq scan.
+
+
+Ans2. 
+Query : select * from takes where id = '123';
+Plan:
+				                                QUERY PLAN                                
+				--------------------------------------------------------------------------
+				 Bitmap Heap Scan on takes  (cost=4.40..52.84 rows=15 width=24)
+				   Recheck Cond: ((id)::text = '123'::text)
+				   ->  Bitmap Index Scan on takes_pkey  (cost=0.00..4.40 rows=15 width=0)
+				         Index Cond: ((id)::text = '123'::text)
+				(4 rows)
+
+Explanation: the number of output rows are too large for an index scan but at the same time too small for sequential scan. First there is a binary index scan which marks a block (a page) with a bit 1 if there are valid tuples inside it. This if followed by a binary heap scan which travels over the pages in physical order and then rechecks all the tuples inside it.
+
+Ans3. 
+Query: select * from student where id = '1000' and name = 'Manber';
+      
+Plan: 
+				                                QUERY PLAN                                  
+				-----------------------------------------------------------------------------
+				 Index Scan using student_pkey on student  (cost=0.28..8.30 rows=1 width=24)
+				   Index Cond: ((id)::text = '1000'::text)
+				   Filter: ((name)::text = 'Manber'::text)
+				(3 rows)
+
+Explanation: First for the condition on id in where clause, postgres does a index search to find those tuples which match the id condition, then it does a filter for the name condition. As it predicted only 1 row for the output (which is indeed the case), index scan followed by a filter was the best option.
+
+Ans4. 
+Query: select * from student natural join takes where name = 'aman';
+Plan:
+				                                   QUERY PLAN                                   
+				--------------------------------------------------------------------------------
+				 Nested Loop  (cost=4.40..92.99 rows=15 width=43)
+				   ->  Seq Scan on student  (cost=0.00..40.00 rows=1 width=24)
+				         Filter: ((name)::text = 'aman'::text)
+				   ->  Bitmap Heap Scan on takes  (cost=4.40..52.84 rows=15 width=24)
+				         Recheck Cond: ((id)::text = (student.id)::text)
+				         ->  Bitmap Index Scan on takes_pkey  (cost=0.00..4.40 rows=15 width=0)
+				               Index Cond: ((id)::text = (student.id)::text)
+				(7 rows)
+
+Explanation : Postgres estimates that the number of tuple with name as 'aman' are going to be very less (1) hence it first does a seq scan on it (name is not an index) and then after getting tuples from the student it does a bitmap heap scan on takes for each 'id' attribute of student (bitmap index scan as number of rows are too short for seq scan and too large for index scan). Its a nested join and not a hash join since the estimate of number of tuples in student relation is 1 and hash join and other will cause more overhead.
+
+
+Ans5.
+Query: select * from teaches, takes where teaches.course_id = takes.course_id order by takes.course_id;
+Plan:
+				                               QUERY PLAN                               
+				------------------------------------------------------------------------
+				 Merge Join  (cost=2756.22..3352.43 rows=39714 width=45)
+				   Merge Cond: ((teaches.course_id)::text = (takes.course_id)::text)
+				   ->  Sort  (cost=5.32..5.57 rows=100 width=21)
+				         Sort Key: teaches.course_id
+				         ->  Seq Scan on teaches  (cost=0.00..2.00 rows=100 width=21)
+				   ->  Sort  (cost=2750.90..2825.90 rows=30000 width=24)
+				         Sort Key: takes.course_id
+				         ->  Seq Scan on takes  (cost=0.00..520.00 rows=30000 width=24)
+				(8 rows)
+Response: The estimates are 100 rows for teaches and 30000 rows for takes so its better to first sort them and then do the merge rather than using hash join and then sorting the big output (estimated 39714).
+
+Ans6. 
+Query: select * from teaches, takes where teaches.course_id = takes.course_id order by takes.course_id limit 10;
+Plan: 
+				Limit  (cost=1966.10..1966.12 rows=10 width=45) (actual time=45.575..45.579 rows=10 loops=1)
+				   ->  Sort  (cost=1966.10..2065.38 rows=39714 width=45) (actual time=45.574..45.575 rows=10 loops=1)
+				         Sort Key: teaches.course_id
+				         Sort Method: top-N heapsort  Memory: 26kB
+				         ->  Hash Join  (cost=3.25..1107.89 rows=39714 width=45) (actual time=0.069..26.109 rows=39714 loops=1)
+				               Hash Cond: ((takes.course_id)::text = (teaches.course_id)::text)
+				               ->  Seq Scan on takes  (cost=0.00..520.00 rows=30000 width=24) (actual time=0.014..5.501 rows=30000 loops=1)
+				               ->  Hash  (cost=2.00..2.00 rows=100 width=21) (actual time=0.046..0.046 rows=100 loops=1)
+				                     Buckets: 1024  Batches: 1  Memory Usage: 14kB
+				                     ->  Seq Scan on teaches  (cost=0.00..2.00 rows=100 width=21) (actual time=0.009..0.020 rows=100 loops=1)
+				 Planning time: 3.355 ms
+				 Execution time: 45.626 ms
+				(12 rows)
+
+				Time: 49.587 ms
+
+Response : top-N heapsort only does partial sort and hence it is better to used hash join to take the join and then use top-N heapsort to sort the data.
+
+Ans7. 
+			postgres=#  create index i1 on takes(id, semester, year);
+			CREATE INDEX
+			Time: 144.629 ms
+
+			postgres=# drop index i1;
+			DROP INDEX
+			Time: 9.248 ms
+
+As we can see, time for creating index is much more than deleting index.
+
+Ans8. 
+				postgres=# begin; explain analyze delete from course where course_id = '400'; rollback;
+				BEGIN
+				Time: 0.235 ms
+				                                              QUERY PLAN                                              
+				------------------------------------------------------------------------------------------------------
+				 Delete on course  (cost=0.00..4.50 rows=1 width=6) (actual time=0.087..0.087 rows=0 loops=1)
+				   ->  Seq Scan on course  (cost=0.00..4.50 rows=1 width=6) (actual time=0.019..0.050 rows=1 loops=1)
+				         Filter: ((course_id)::text = '400'::text)
+				         Rows Removed by Filter: 199
+				 Planning time: 1.474 ms
+				 Trigger for constraint section_course_id_fkey on course: time=1.638 calls=1
+				 Trigger for constraint prereq_course_id_fkey on course: time=1.840 calls=1
+				 Trigger for constraint prereq_prereq_id_fkey on course: time=0.456 calls=1
+				 Trigger for constraint teaches_course_id_fkey on section: time=1.930 calls=2
+				 Trigger for constraint takes_course_id_fkey on section: time=16.497 calls=2
+				 Execution time: 22.493 ms
+				(11 rows)
+
+				Time: 24.389 ms
+				ROLLBACK
+				Time: 0.204 ms
+
+Time taken for the deletion is 24.389 ms
+
+AFTER INDEX CREATION:
+				postgres=# begin; explain analyze delete from course where course_id = '400'; rollback;
+				BEGIN
+				Time: 0.248 ms
+				                                              QUERY PLAN                                              
+				------------------------------------------------------------------------------------------------------
+				 Delete on course  (cost=0.00..4.50 rows=1 width=6) (actual time=0.083..0.083 rows=0 loops=1)
+				   ->  Seq Scan on course  (cost=0.00..4.50 rows=1 width=6) (actual time=0.028..0.058 rows=1 loops=1)
+				         Filter: ((course_id)::text = '400'::text)
+				         Rows Removed by Filter: 199
+				 Planning time: 1.466 ms
+				 Trigger for constraint section_course_id_fkey on course: time=2.501 calls=1
+				 Trigger for constraint prereq_course_id_fkey on course: time=3.108 calls=1
+				 Trigger for constraint prereq_prereq_id_fkey on course: time=0.344 calls=1
+				 Trigger for constraint teaches_course_id_fkey on section: time=2.595 calls=2
+				 Trigger for constraint takes_course_id_fkey on section: time=6.357 calls=2
+				 Execution time: 15.033 ms
+				(11 rows)
+
+				Time: 16.874 ms
+				ROLLBACK
+				Time: 0.214 ms
+
+The time taken is 16.874ms which is significantly less than the time taken without index (almost 33% lower!!).
